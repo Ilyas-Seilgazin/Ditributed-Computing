@@ -1,0 +1,168 @@
+#include <stdio.h>
+#include <iostream>
+#include <mpi.h>
+
+#define N 10
+
+int sum = 0;
+
+decltype(auto) serialAlgorithm(int matrix1[][N], int matrix2[][N])
+{
+    double time_begin = MPI_Wtime();
+
+    auto temp_matrix = new int[N][N];
+
+    for (int i = 0; i < N; i++)
+    {
+        for (int j = 0; j < N; j++)
+        {
+            for (int k = 0; k < N; k++)
+            {
+                sum += matrix1[i][k] * matrix2[k][j];
+            }
+            temp_matrix[i][j] = sum;
+            sum = 0;
+        }
+    }
+    double execution_time = MPI_Wtime() - time_begin;
+
+    printf("Serial matrices multiplication is completed! \n");
+    printf("Elapsed time: %f ms. \n", execution_time);
+    printf("\n");
+    
+
+    
+    return temp_matrix;
+}
+
+decltype(auto) parallelAlgorithm(int matrix1[][N], int matrix2[][N], int rank)
+{
+    
+    double min_time, max_time, avg_time;
+    double begin_time = MPI_Wtime();
+
+    int size, root = 0;
+
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    
+    int thread = N / size;
+
+   
+    auto first_matrix = new int[N][N];
+    auto temp_matrix = new int[N][N];
+    auto parallel_matrix = new int[N][N];
+
+   
+    MPI_Scatter(matrix1, N * N / size, MPI_INT, first_matrix, N * N / size, MPI_INT, root, MPI_COMM_WORLD);
+
+   
+    MPI_Bcast(matrix2, N * N, MPI_INT, 0, MPI_COMM_WORLD);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+   
+
+    for (int i = 0; i < thread; i++)
+    {
+        for (int j = 0; j < N; j++)
+        {
+            for (int k = 0; k < N; k++)
+            {
+                sum += first_matrix[i][k] * matrix2[k][j];
+            }
+            temp_matrix[i][j] = sum;
+           
+            sum = 0;
+        }
+       
+    }
+
+    
+    MPI_Gather(temp_matrix, N * N / size, MPI_INT, parallel_matrix, N * N / size, MPI_INT, root, MPI_COMM_WORLD);
+
+    double execution_time = MPI_Wtime() - begin_time;
+
+
+    MPI_Barrier(MPI_COMM_WORLD);
+   
+  
+    MPI_Reduce(&execution_time, &min_time, 1, MPI_DOUBLE, MPI_MIN, root, MPI_COMM_WORLD);
+    MPI_Reduce(&execution_time, &max_time, 1, MPI_DOUBLE, MPI_MAX, root, MPI_COMM_WORLD);
+    MPI_Reduce(&execution_time, &avg_time, 1, MPI_DOUBLE, MPI_SUM, root, MPI_COMM_WORLD);
+
+    MPI_Barrier(MPI_COMM_WORLD);
+   
+    if (rank == 0)
+    {
+        printf("Parallel matrices multiplication is completed! \n");
+        printf("Elapsed time: %f ms. \n", avg_time/size);
+        printf("\n");
+        
+    }
+    return parallel_matrix;
+}
+int main(int argc, char** argv)
+{
+
+    auto matrix1 = new int[N][N];
+    auto matrix2 = new int[N][N];
+
+    MPI_Init(NULL, NULL);
+
+    int rank;
+
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    if (rank == 0)
+    {
+
+
+
+        srand(time(NULL));
+        for (int i = 0; i < N; i++)
+        {
+            for (int j = 0; j < N; j++)
+            {
+                matrix1[i][j] = rand() % 9 + 1;
+
+            }
+
+        }
+        printf("First Matrix is created!\n");
+        printf("\n");
+
+
+        srand(time(NULL) + 1);
+        for (int i = 0; i < N; i++)
+        {
+            for (int j = 0; j < N; j++)
+            {
+                matrix2[i][j] = rand() % 9 + 1;
+
+            }
+
+        }
+
+        printf("Second Matrix is created!\n");
+        printf("\n");
+
+     
+    }
+
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+
+    parallelAlgorithm(matrix1, matrix2, rank);
+
+
+    MPI_Barrier(MPI_COMM_WORLD);
+
+
+    if (rank == 0)
+    {
+
+        serialAlgorithm(matrix1, matrix2);
+    }
+    MPI_Finalize();
+}
